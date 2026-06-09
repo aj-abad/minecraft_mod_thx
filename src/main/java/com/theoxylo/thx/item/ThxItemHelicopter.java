@@ -4,10 +4,12 @@ import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.MathHelper;
 import net.minecraft.world.World;
 
 import com.theoxylo.thx.ModThx;
 import com.theoxylo.thx.Reference;
+import com.theoxylo.thx.entity.ThxEntityHelicopter;
 
 /**
  * The craftable helicopter item. Ported from the 1.6.1 ThxItemHelicopter:
@@ -18,6 +20,9 @@ import com.theoxylo.thx.Reference;
  */
 public class ThxItemHelicopter extends Item
 {
+    private static final float RAD_PER_DEG = 0.01745329f;
+    private static final float PI = 3.14159265f;
+
     public ThxItemHelicopter()
     {
         setUnlocalizedName("helicopter");                       // -> item.helicopter.name
@@ -30,15 +35,29 @@ public class ThxItemHelicopter extends Item
     @Override
     public ItemStack onItemRightClick(ItemStack itemstack, World world, EntityPlayer player)
     {
-        // TODO Phase 3: spawn a ThxEntityHelicopter here. The 1.6.1 version played
-        // "random.bow", computed a spawn position 3 blocks ahead of the player from
-        // yaw/pitch, set owner = player, and called world.spawnEntityInWorld(...).
-        // Left disabled (and the stack intentionally not decremented) until the
-        // entity is ported, so the item doesn't consume itself with no effect.
-        if (ModThx.log != null)
+        world.playSoundAtEntity(player, "random.bow", 0.5F, 0.4F / (world.rand.nextFloat() * 0.4F + 0.8F));
+
+        // spawn ~3 blocks ahead of where the player is looking
+        float yawRad = player.rotationYaw * RAD_PER_DEG;
+        float pitchRad = player.rotationPitch * RAD_PER_DEG;
+        float cosYaw = MathHelper.cos(-yawRad - PI);
+        float sinYaw = MathHelper.sin(-yawRad - PI);
+        float horiz  = -MathHelper.cos(-pitchRad);
+        double spawnX = player.posX + sinYaw * horiz * 3.0;
+        double spawnY = player.posY + 1.0;
+        double spawnZ = player.posZ + cosYaw * horiz * 3.0;
+        float yaw = (player.rotationYaw - 45f) % 360f;
+
+        if (!world.isRemote)
         {
-            ModThx.log.info("helicopter item used by " + player.getCommandSenderName()
-                + " (spawn pending Phase 3)");
+            ThxEntityHelicopter heli = new ThxEntityHelicopter(world, spawnX, spawnY, spawnZ, yaw);
+            world.spawnEntityInWorld(heli);
+            ModThx.log.info("spawned helicopter for " + player.getCommandSenderName());
+        }
+
+        if (!player.capabilities.isCreativeMode)
+        {
+            itemstack.stackSize--;
         }
         return itemstack;
     }

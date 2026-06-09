@@ -1,5 +1,9 @@
 package com.theoxylo.thx.proxy;
 
+import com.theoxylo.thx.client.render.ThxRender;
+import com.theoxylo.thx.entity.ThxEntityHelicopter;
+
+import cpw.mods.fml.client.registry.RenderingRegistry;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 
 /**
@@ -20,8 +24,7 @@ public class ClientProxy extends CommonProxy
     @Override
     public void registerRenderers()
     {
-        // TODO Phase 4: RenderingRegistry.registerEntityRenderingHandler(
-        //     ThxEntityHelicopter.class, new ThxRender());  (+ rocket, missile)
+        RenderingRegistry.registerEntityRenderingHandler(ThxEntityHelicopter.class, new ThxRender());
     }
 
     @Override
