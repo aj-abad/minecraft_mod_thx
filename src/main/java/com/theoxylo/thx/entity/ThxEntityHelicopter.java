@@ -58,6 +58,11 @@ public class ThxEntityHelicopter extends Entity
     /** Set by the client input handler when the LOCAL player is the pilot: predict locally, ignore the tracker. */
     public boolean clientControlled;
 
+    // client interpolation toward the entity-tracker target (non-piloted / spectator view)
+    private double lerpX, lerpY, lerpZ;
+    private float lerpYaw, lerpPitch;
+    private int lerpSteps;
+
     // flight state (read by the renderer where public)
     public float rotationRoll;
     public float prevRotationRoll; // previous-tick roll, for smooth render interpolation
@@ -123,9 +128,28 @@ public class ThxEntityHelicopter extends Entity
         }
         else
         {
-            // CLIENT spectator: position/rotation come from the tracker; just read the synced extras.
+            // CLIENT spectator (vacant or someone else's): smoothly follow the tracker, read synced extras.
+            clientLerp();
             readSyncedState();
         }
+    }
+
+    /** EntityBoat-style smoothing of the quantized tracker updates, so non-piloted helicopters
+     *  (e.g. one in freefall) don't jitter. */
+    private void clientLerp()
+    {
+        if (lerpSteps <= 0) return;
+        double nx = posX + (lerpX - posX) / lerpSteps;
+        double ny = posY + (lerpY - posY) / lerpSteps;
+        double nz = posZ + (lerpZ - posZ) / lerpSteps;
+        float dyaw = lerpYaw - rotationYaw;
+        while (dyaw > 180f) dyaw -= 360f;
+        while (dyaw < -180f) dyaw += 360f;
+        rotationYaw += dyaw / lerpSteps;
+        rotationPitch += (lerpPitch - rotationPitch) / lerpSteps;
+        lerpSteps--;
+        setPosition(nx, ny, nz);
+        setRotation(rotationYaw, rotationPitch);
     }
 
     /** One step of piloted flight: input -> rotation/throttle -> thrust -> motion -> move. */
@@ -138,24 +162,29 @@ public class ThxEntityHelicopter extends Entity
         moveEntity(motionX, motionY, motionZ);
     }
 
-    /** Vacant helicopter: simple gravity until it rests on the ground; rotor spins down. */
+    /** Vacant helicopter: gravity + retained momentum, so one bailed at speed arcs instead of
+     *  dropping straight down. Rotor spins down. */
     private void gravityFall()
     {
         motionY -= 0.08;
         if (motionY < -2.0) motionY = -2.0;
         moveEntity(motionX, motionY, motionZ);
-        motionX *= 0.5;
-        motionZ *= 0.5;
-        if (onGround) { motionX = 0.0; motionZ = 0.0; }
+        // light air drag keeps horizontal momentum (a freshly spawned craft has none, so it just drops)
+        motionX *= 0.98;
+        motionZ *= 0.98;
+        if (onGround) { motionX *= 0.5; motionZ *= 0.5; } // settle once it lands
         throttle *= 0.6f;
     }
 
-    /** While the local pilot is predicting, ignore the entity tracker so it doesn't reintroduce jitter. */
+    /** Tracker update on the client. While the local pilot is predicting, ignore it entirely;
+     *  otherwise store it as the interpolation target (smoothed in {@link #clientLerp()}). */
     @Override
     public void setPositionAndRotation2(double x, double y, double z, float yaw, float pitch, int incrementCount)
     {
         if (clientControlled) return;
-        super.setPositionAndRotation2(x, y, z, yaw, pitch, incrementCount);
+        lerpX = x; lerpY = y; lerpZ = z;
+        lerpYaw = yaw; lerpPitch = pitch;
+        lerpSteps = incrementCount;
     }
 
     private void readSyncedState()
