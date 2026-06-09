@@ -55,8 +55,12 @@ public class ThxEntityHelicopter extends Entity
     /** Latest pilot input bitmask, written by the network handler (Netty thread), read on the server tick. */
     public volatile int inputKeys;
 
+    /** Set by the client input handler when the LOCAL player is the pilot: predict locally, ignore the tracker. */
+    public boolean clientControlled;
+
     // flight state (read by the renderer where public)
     public float rotationRoll;
+    public float prevRotationRoll; // previous-tick roll, for smooth render interpolation
     public float throttle;
     public float rotationYawSpeed;
     public float rotationPitchSpeed;
@@ -93,52 +97,65 @@ public class ThxEntityHelicopter extends Entity
     public void onUpdate()
     {
         super.onUpdate(); // prevPos/rotation bookkeeping, fire/water checks
-
-        if (riddenByEntity != null)
-        {
-            if (!worldObj.isRemote)
-            {
-                if (riddenByEntity.isDead)
-                {
-                    riddenByEntity.mountEntity(null);
-                }
-                else
-                {
-                    applyPilotInput();
-                    updateRotation();
-                    updateVectors();
-                    updateMotion();
-                    moveEntity(motionX, motionY, motionZ);
-                }
-            }
-            else
-            {
-                readSyncedState(); // roll + throttle for rendering
-            }
-        }
-        else // vacant: simple gravity fall until it rests on the ground
-        {
-            if (!worldObj.isRemote)
-            {
-                motionY -= 0.08;
-                if (motionY < -2.0) motionY = -2.0;
-                moveEntity(motionX, motionY, motionZ);
-                motionX *= 0.5;
-                motionZ *= 0.5;
-                if (onGround) { motionX = 0.0; motionZ = 0.0; }
-                throttle *= 0.6f; // spin the rotor down
-            }
-            else
-            {
-                readSyncedState();
-            }
-        }
+        prevRotationRoll = rotationRoll; // captured at tick start, mirroring prevRotationYaw/Pitch
 
         if (!worldObj.isRemote)
         {
+            // SERVER: authoritative simulation
+            if (riddenByEntity != null)
+            {
+                if (riddenByEntity.isDead) riddenByEntity.mountEntity(null);
+                else flightStep();
+            }
+            else
+            {
+                gravityFall();
+            }
             dataWatcher.updateObject(DW_ROLL, Integer.valueOf((int) (rotationRoll * 1000f)));
             dataWatcher.updateObject(DW_THROTTLE, Integer.valueOf((int) (throttle * 1000f)));
         }
+        else if (clientControlled && riddenByEntity != null)
+        {
+            // CLIENT PREDICTION (local pilot): run identical physics locally for a smooth,
+            // zero-lag view. The tracker's quantized updates are ignored (see
+            // setPositionAndRotation2) so they don't fight the prediction.
+            flightStep();
+        }
+        else
+        {
+            // CLIENT spectator: position/rotation come from the tracker; just read the synced extras.
+            readSyncedState();
+        }
+    }
+
+    /** One step of piloted flight: input -> rotation/throttle -> thrust -> motion -> move. */
+    private void flightStep()
+    {
+        applyPilotInput();
+        updateRotation();
+        updateVectors();
+        updateMotion();
+        moveEntity(motionX, motionY, motionZ);
+    }
+
+    /** Vacant helicopter: simple gravity until it rests on the ground; rotor spins down. */
+    private void gravityFall()
+    {
+        motionY -= 0.08;
+        if (motionY < -2.0) motionY = -2.0;
+        moveEntity(motionX, motionY, motionZ);
+        motionX *= 0.5;
+        motionZ *= 0.5;
+        if (onGround) { motionX = 0.0; motionZ = 0.0; }
+        throttle *= 0.6f;
+    }
+
+    /** While the local pilot is predicting, ignore the entity tracker so it doesn't reintroduce jitter. */
+    @Override
+    public void setPositionAndRotation2(double x, double y, double z, float yaw, float pitch, int incrementCount)
+    {
+        if (clientControlled) return;
+        super.setPositionAndRotation2(x, y, z, yaw, pitch, incrementCount);
     }
 
     private void readSyncedState()

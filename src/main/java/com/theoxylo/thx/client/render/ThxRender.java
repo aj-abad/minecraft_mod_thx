@@ -33,9 +33,10 @@ public class ThxRender extends Render
 
         bindTexture(TEXTURE);
 
-        model.rotationYaw   = heli.rotationYaw;
-        model.rotationPitch = heli.rotationPitch;
-        model.rotationRoll  = heli.rotationRoll;
+        // interpolate rotation between ticks so the model is smooth at render FPS
+        model.rotationYaw   = lerpAngle(heli.prevRotationYaw, heli.rotationYaw, partialTicks);
+        model.rotationPitch = heli.prevRotationPitch + (heli.rotationPitch - heli.prevRotationPitch) * partialTicks;
+        model.rotationRoll  = lerpAngle(heli.prevRotationRoll, heli.rotationRoll, partialTicks);
 
         // rotor speed tracks throttle while occupied; still when parked/empty
         if (heli.riddenByEntity != null)
@@ -57,5 +58,14 @@ public class ThxRender extends Render
     protected ResourceLocation getEntityTexture(Entity entity)
     {
         return TEXTURE;
+    }
+
+    /** Shortest-path angle interpolation (handles the 180/-180 wrap). */
+    private static float lerpAngle(float prev, float now, float t)
+    {
+        float d = now - prev;
+        while (d > 180f) d -= 360f;
+        while (d < -180f) d += 360f;
+        return prev + d * t;
     }
 }
