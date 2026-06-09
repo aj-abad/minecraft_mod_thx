@@ -16,3 +16,5 @@ project_server/debug.log
 *.iml
 .settings/
 bin/
+
+.DS_Store

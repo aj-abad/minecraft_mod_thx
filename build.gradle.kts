@@ -58,8 +58,8 @@ val gatherViewerNatives by tasks.registering(Copy::class) {
     dependsOn("extractNatives2")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     // RFG expands the LWJGL natives jar under build/tmp; runClient also leaves a copy under run/natives.
-    from(fileTree(layout.buildDirectory.dir("tmp/.cache/expanded")) { include("**/*.dll") })
-    from(fileTree("run/natives") { include("**/*.dll") })
+    from(fileTree(layout.buildDirectory.dir("tmp/.cache/expanded")) { include("**/*.dll", "**/*.dylib", "**/*.jnilib") })
+    from(fileTree("run/natives") { include("**/*.dll", "**/*.dylib", "**/*.jnilib") })
     into(layout.buildDirectory.dir("viewer-natives"))
     eachFile { path = name } // flatten into one dir
     includeEmptyDirs = false
