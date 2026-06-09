@@ -14,7 +14,7 @@ public final class ModEntities
 {
     private static final int HELICOPTER_ID = 1; // unique within this mod
     private static final int TRACKING_RANGE = 80;
-    private static final int UPDATE_FREQUENCY = 3;
+    private static final int UPDATE_FREQUENCY = 1; // every tick, for smooth flight
     private static final boolean SEND_VELOCITY = true;
 
     public static void register()

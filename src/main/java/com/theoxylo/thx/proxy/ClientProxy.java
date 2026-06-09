@@ -1,9 +1,11 @@
 package com.theoxylo.thx.proxy;
 
+import com.theoxylo.thx.client.ClientInputHandler;
 import com.theoxylo.thx.client.render.ThxRender;
 import com.theoxylo.thx.entity.ThxEntityHelicopter;
 
 import cpw.mods.fml.client.registry.RenderingRegistry;
+import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 
 /**
@@ -19,6 +21,8 @@ public class ClientProxy extends CommonProxy
         super.init(event);
         registerRenderers();
         registerKeyBindings();
+        // Flight input: poll the pilot's keys each client tick and send to the server.
+        FMLCommonHandler.instance().bus().register(new ClientInputHandler());
     }
 
     @Override

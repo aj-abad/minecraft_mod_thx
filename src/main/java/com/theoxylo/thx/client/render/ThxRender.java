@@ -36,7 +36,18 @@ public class ThxRender extends Render
         model.rotationYaw   = heli.rotationYaw;
         model.rotationPitch = heli.rotationPitch;
         model.rotationRoll  = heli.rotationRoll;
-        model.rotorSpeed    = 0f; // rotors still until flight/throttle drives them
+
+        // rotor speed tracks throttle while occupied; still when parked/empty
+        if (heli.riddenByEntity != null)
+        {
+            float power = (heli.throttle - ThxEntityHelicopter.THROTTLE_MIN)
+                / (ThxEntityHelicopter.THROTTLE_MAX - ThxEntityHelicopter.THROTTLE_MIN);
+            model.rotorSpeed = power / 2f + 0.75f;
+        }
+        else
+        {
+            model.rotorSpeed = 0f;
+        }
         model.render();
 
         GL11.glPopMatrix();

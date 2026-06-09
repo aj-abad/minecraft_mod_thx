@@ -2,6 +2,7 @@ package com.theoxylo.thx.proxy;
 
 import com.theoxylo.thx.ModEntities;
 import com.theoxylo.thx.ModItems;
+import com.theoxylo.thx.network.ThxNetwork;
 
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
@@ -22,6 +23,8 @@ public class CommonProxy
         ModItems.register();
         // Phase 3: helicopter entity (class + tracker; common to both sides).
         ModEntities.register();
+        // Flight: network channel for pilot input (client -> server).
+        ThxNetwork.init();
     }
 
     public void init(FMLInitializationEvent event) {}
