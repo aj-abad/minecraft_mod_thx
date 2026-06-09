@@ -40,8 +40,8 @@ public class ModThx
         log = event.getModLog();
         log.info("preInit " + Reference.NAME + " v" + Reference.VERSION);
 
-        // TODO Phase 2: register the helicopter item + crafting recipe (GameRegistry).
-        // TODO Phase 3: register entities (EntityRegistry.registerModEntity).
+        // Phase 2: helicopter item + recipe are registered in CommonProxy.preInit.
+        // TODO Phase 3: register the helicopter entity (EntityRegistry.registerModEntity).
         // TODO Phase 5: create the SimpleNetworkWrapper channel + message handlers.
 
         proxy.preInit(event);

@@ -1,5 +1,7 @@
 package com.theoxylo.thx.proxy;
 
+import com.theoxylo.thx.ModItems;
+
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
@@ -13,7 +15,11 @@ import cpw.mods.fml.common.event.FMLPreInitializationEvent;
  */
 public class CommonProxy
 {
-    public void preInit(FMLPreInitializationEvent event) {}
+    public void preInit(FMLPreInitializationEvent event)
+    {
+        // Phase 2: helicopter item + crafting recipe (common to both sides).
+        ModItems.register();
+    }
 
     public void init(FMLInitializationEvent event) {}
 

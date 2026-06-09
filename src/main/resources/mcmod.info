@@ -1,21 +1,13 @@
-{
-  "modinfoversion": 2,
-  "modlist": [{
+[
+  {
     "modid": "thx",
     "name": "THX Helicopter Mod",
-    "description": "Adds a craftable, flyable helicopter with rockets and missiles.",
+    "description": "Adds a craftable, flyable helicopter.",
     "version": "${version}",
     "mcversion": "${mcversion}",
     "url": "https://github.com/theoxylo/minecraft_mod_thx",
-    "updateUrl": "",
-    "authors": [ "Theoxylo" ],
     "credits": "",
-    "logoFile": "",
-    "screenshots": [],
-    "parent": "",
-    "requiredMods": [],
-    "dependencies": [],
-    "dependants": [],
-    "useDependencyInformation": "true"
-  }]
-}
+    "authorList": ["Theoxylo"],
+    "dependencies": []
+  }
+]
