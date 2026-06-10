@@ -1,0 +1,270 @@
+{
+  "meta": {
+    "format_version": "4.5",
+    "model_format": "modded_entity",
+    "box_uv": true
+  },
+  "name": "boat",
+  "model_identifier": "boat",
+  "modded_entity_version": "1.7",
+  "modded_entity_flip_y": true,
+  "resolution": {
+    "width": 64,
+    "height": 32
+  },
+  "elements": [
+    {
+      "name": "boatBottom",
+      "box_uv": true,
+      "uv_offset": [
+        0,
+        8
+      ],
+      "from": [
+        -12.0,
+        -12.0,
+        -3.0
+      ],
+      "to": [
+        12.0,
+        4.0,
+        1.0
+      ],
+      "origin": [
+        0.0,
+        -4.0,
+        0.0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "autouv": 0,
+      "color": 0,
+      "uuid": "00000000-0000-4000-8000-000000000000"
+    },
+    {
+      "name": "boatSide1",
+      "box_uv": true,
+      "uv_offset": [
+        0,
+        0
+      ],
+      "from": [
+        -21.0,
+        -3.0,
+        -1.0
+      ],
+      "to": [
+        -1.0,
+        3.0,
+        1.0
+      ],
+      "origin": [
+        -11.0,
+        -4.0,
+        0.0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "autouv": 0,
+      "color": 1,
+      "uuid": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "name": "boatSide2",
+      "box_uv": true,
+      "uv_offset": [
+        0,
+        0
+      ],
+      "from": [
+        1.0,
+        -3.0,
+        -1.0
+      ],
+      "to": [
+        21.0,
+        3.0,
+        1.0
+      ],
+      "origin": [
+        11.0,
+        -4.0,
+        0.0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "autouv": 0,
+      "color": 2,
+      "uuid": "00000000-0000-4000-8000-000000000002"
+    },
+    {
+      "name": "boatSide3",
+      "box_uv": true,
+      "uv_offset": [
+        0,
+        0
+      ],
+      "from": [
+        -10.0,
+        -3.0,
+        -10.0
+      ],
+      "to": [
+        10.0,
+        3.0,
+        -8.0
+      ],
+      "origin": [
+        0.0,
+        -4.0,
+        -9.0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "autouv": 0,
+      "color": 3,
+      "uuid": "00000000-0000-4000-8000-000000000003"
+    },
+    {
+      "name": "boatSide4",
+      "box_uv": true,
+      "uv_offset": [
+        0,
+        0
+      ],
+      "from": [
+        -10.0,
+        -3.0,
+        8.0
+      ],
+      "to": [
+        10.0,
+        3.0,
+        10.0
+      ],
+      "origin": [
+        0.0,
+        -4.0,
+        9.0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "autouv": 0,
+      "color": 4,
+      "uuid": "00000000-0000-4000-8000-000000000004"
+    }
+  ],
+  "outliner": [
+    {
+      "name": "boatBottom",
+      "origin": [
+        0.0,
+        -4.0,
+        0.0
+      ],
+      "rotation": [
+        -90,
+        0,
+        0
+      ],
+      "uuid": "00000000-0000-4000-8000-000000000100",
+      "export": true,
+      "isOpen": false,
+      "children": [
+        "00000000-0000-4000-8000-000000000000"
+      ]
+    },
+    {
+      "name": "boatSide1",
+      "origin": [
+        -11.0,
+        -4.0,
+        0.0
+      ],
+      "rotation": [
+        0,
+        -270,
+        0
+      ],
+      "uuid": "00000000-0000-4000-8000-000000000101",
+      "export": true,
+      "isOpen": false,
+      "children": [
+        "00000000-0000-4000-8000-000000000001"
+      ]
+    },
+    {
+      "name": "boatSide2",
+      "origin": [
+        11.0,
+        -4.0,
+        0.0
+      ],
+      "rotation": [
+        0,
+        -90,
+        0
+      ],
+      "uuid": "00000000-0000-4000-8000-000000000102",
+      "export": true,
+      "isOpen": false,
+      "children": [
+        "00000000-0000-4000-8000-000000000002"
+      ]
+    },
+    {
+      "name": "boatSide3",
+      "origin": [
+        0.0,
+        -4.0,
+        -9.0
+      ],
+      "rotation": [
+        0,
+        -180,
+        0
+      ],
+      "uuid": "00000000-0000-4000-8000-000000000103",
+      "export": true,
+      "isOpen": false,
+      "children": [
+        "00000000-0000-4000-8000-000000000003"
+      ]
+    },
+    {
+      "name": "boatSide4",
+      "origin": [
+        0.0,
+        -4.0,
+        9.0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "uuid": "00000000-0000-4000-8000-000000000104",
+      "export": true,
+      "isOpen": false,
+      "children": [
+        "00000000-0000-4000-8000-000000000004"
+      ]
+    }
+  ],
+  "textures": []
+}
