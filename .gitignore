@@ -1,9 +1,3 @@
-.metadata/
-project_client/temp/
-project_client/debug.log
-project_server/temp/
-project_server/debug.log
-
 # ForgeGradle / Gradle 1.7.10 workspace
 /.gradle/
 /build/
@@ -18,3 +12,8 @@ project_server/debug.log
 bin/
 
 .DS_Store
+
+# Local-only vanilla reference models (Mojang IP — kept out of the repo)
+/blockbench/ModelBoat.java
+/blockbench/glass_pane_*.json
+/blockbench/template_glass_pane_*.json
