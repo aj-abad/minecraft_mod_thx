@@ -1,5 +1,6 @@
 package com.theoxylo.thx.entity;
 
+import net.minecraft.block.material.Material;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.nbt.NBTTagCompound;
@@ -60,6 +61,10 @@ public class ThxEntityHelicopter extends Entity
     // crash: blocked motion (intended minus actual move) that wrecks the craft
     private static final float CRASH_SPEED = 0.5f;        // piloted: ~10 m/s into terrain
     private static final float CRASH_SPEED_VACANT = 1.2f; // bailed-out freefall: only a long drop wrecks it
+
+    // rotor wash (client-side visual): spray ring kicked up from water below the rotor
+    private static final int WASH_RANGE = 8;          // blocks of downwash reach below the craft
+    private static final float WASH_MIN_POWER = 0.4f; // rotor power needed to kick up spray
 
     // pilot control key bits (see HelicopterInputMessage / ClientInputHandler)
     private static final int K_FWD = 1, K_BACK = 2, K_LEFT = 4, K_RIGHT = 8, K_UP = 16, K_DOWN = 32;
@@ -150,6 +155,8 @@ public class ThxEntityHelicopter extends Entity
             clientLerp();
             readSyncedState();
         }
+
+        if (worldObj.isRemote) spawnRotorWash();
     }
 
     /** EntityBoat-style smoothing of the quantized tracker updates, so non-piloted helicopters
@@ -232,6 +239,59 @@ public class ThxEntityHelicopter extends Entity
     {
         rotationRoll = dataWatcher.getWatchableObjectInt(DW_ROLL) / 1000f;
         rotorPower = dataWatcher.getWatchableObjectInt(DW_POWER) / 1000f;
+    }
+
+    /** Client-side rotor downwash: a VC-style ring of spray + drifting mist on water below.
+     *  Driven entirely by replicated state (position + rotorPower), so the predicting pilot and
+     *  spectators see the same thing; spawnParticle is a no-op on the dedicated server. */
+    private void spawnRotorWash()
+    {
+        if (rotorPower < WASH_MIN_POWER) return;
+
+        // walk down from the skids looking for a water surface within downwash range
+        int bx = MathHelper.floor_double(posX);
+        int topY = MathHelper.floor_double(posY);
+        int bz = MathHelper.floor_double(posZ);
+        double surfaceY = -1.0;
+        for (int dy = 0; dy <= WASH_RANGE; dy++)
+        {
+            Material m = worldObj.getBlock(bx, topY - dy, bz).getMaterial();
+            if (m.isLiquid())
+            {
+                if (m != Material.water) return; // lava: no spray
+                surfaceY = topY - dy + 1.0;
+                break;
+            }
+            if (m.isSolid()) return; // ground intercepts the downwash
+        }
+        double height = posY - surfaceY;
+        if (surfaceY < 0.0 || height < 0.0 || height > WASH_RANGE) return; // no water, or submerged
+
+        // closer + more rotor = denser, wider, faster spray
+        float intensity = (float) (1.0 - height / WASH_RANGE) * (rotorPower / POWER_MAX);
+        if (intensity < 0.05f) return;
+
+        double ringRadius = 1.5 + 2.5 * intensity;
+        int sprayCount = (int) (14f * intensity);
+        for (int i = 0; i < sprayCount; i++)
+        {
+            double angle = rand.nextDouble() * Math.PI * 2.0;
+            double r = ringRadius * (0.8 + 0.4 * rand.nextDouble());
+            double outward = 0.15 + 0.3 * intensity; // deflected outward along the surface
+            worldObj.spawnParticle("splash",
+                posX + Math.cos(angle) * r, surfaceY + 0.1, posZ + Math.sin(angle) * r,
+                Math.cos(angle) * outward, 0.1 + 0.2 * intensity, Math.sin(angle) * outward);
+        }
+
+        int mistCount = 1 + (int) (3f * intensity);
+        for (int i = 0; i < mistCount; i++)
+        {
+            double angle = rand.nextDouble() * Math.PI * 2.0;
+            double r = ringRadius * rand.nextDouble();
+            worldObj.spawnParticle("cloud",
+                posX + Math.cos(angle) * r, surfaceY + 0.2, posZ + Math.sin(angle) * r,
+                Math.cos(angle) * 0.08, 0.02, Math.sin(angle) * 0.08);
+        }
     }
 
     /** Map the pilot's input + look direction onto attitude torques and rotor power (server side,
