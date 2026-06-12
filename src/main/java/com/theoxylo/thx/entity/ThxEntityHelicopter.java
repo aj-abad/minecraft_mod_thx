@@ -14,40 +14,59 @@ import com.theoxylo.thx.util.Vector3;
  *
  * Flight is server-authoritative: the pilot's client sends a control bitmask
  * (see HelicopterInputMessage); the server runs the physics here and the entity
- * tracker syncs position/rotation to all clients. Roll + throttle are synced via
- * dataWatcher (for the model roll and rotor speed). The entity itself holds no
+ * tracker syncs position/rotation to all clients. Roll + rotor power are synced
+ * via dataWatcher (for the model roll and rotor speed). The entity itself holds no
  * client-only references, so the dedicated server is safe.
  *
- * Physics (updateThrust/updateMotion) and the input-to-rotation mapping are
- * ported from the 1.6.1 ThxEntityHelicopter. Deferred for now: view modes,
- * look-pitch, altitude lock, HUD, map, crash damage, and the rocket/missile
- * features (descoped).
+ * Physics is a GTA-style arcade flight model (replacing the 1.6.1 port):
+ * pitch/roll keys apply torque integrated with angular momentum, angular drag,
+ * and a weak auto-level stabilizer; the rotor spools toward the commanded
+ * collective and lifts along the tilted rotor axis; per-axis aerodynamic drag
+ * (not a speed cap) sets the terminal speeds; hard impacts wreck the craft.
+ * Yaw still chases the pilot's look direction. Deferred for now: view modes,
+ * look-pitch, altitude lock, HUD, map, and the rocket/missile features
+ * (descoped).
  */
 public class ThxEntityHelicopter extends Entity
 {
     private static final float RAD_PER_DEG = 0.01745329f;
-    private static final float PI = 3.14159265f;
     private static final float DT = 0.05f; // fixed per-tick timestep (20 TPS)
 
-    // tuning (from the original)
-    private static final float MAX_ACCEL = 0.2000f;
-    private static final float GRAVITY = 0.2005f;
-    private static final float MAX_VELOCITY = 0.26f;
-    private static final float FRICTION = 0.98f;
-    private static final float MAX_PITCH = 50.0f;
-    private static final float PITCH_SPEED_DEG = 40f;
-    private static final float MAX_ROLL = 30.0f;
-    private static final float ROLL_SPEED_DEG = 40f;
-    public static final float THROTTLE_MIN = -0.06f;
-    public static final float THROTTLE_MAX = 0.09f;
-    private static final float THROTTLE_INC = 0.004f;
+    // --- flight model tuning ---
+    // translation: accelerations in blocks/tick^2, velocities in blocks/tick (1 b/t = 20 m/s)
+    private static final float GRAVITY = 0.045f;
+    private static final float DRAG_FWD = 0.956f;   // velocity kept per tick along the nose -> ~1.05 b/t terminal dive
+    private static final float DRAG_LAT = 0.92f;    // sideslip bleeds faster, so banked turns carve
+    private static final float DRAG_VERT = 0.964f;  // rotor disc resists vertical flow -> ~0.4 b/t max climb
+    private static final float MAX_VELOCITY = 1.5f; // safety net only; the real limits come from drag
+    private static final float GROUND_FRICTION = 0.85f;
+
+    // rotor: lift in units of gravity (1.0 hovers when level)
+    public static final float POWER_MAX = 1.35f;      // full collective (public: renderer keys the rotor anim off it)
+    private static final float POWER_NEUTRAL = 0.95f; // hands-off idle: just under hover, so the craft slowly settles
+    private static final float POWER_MIN = 0.60f;     // full down collective: brisk but survivable descent
+    private static final float POWER_SPOOL = 0.04f;   // lerp toward target per tick (~1.2 s spool time constant)
+
+    // attitude: deg, deg/s, deg/s^2; keys apply torque, integrated with momentum and drag
+    private static final float PITCH_TORQUE = 130f;
+    private static final float ROLL_TORQUE = 130f;
+    private static final float MAX_PITCH_DOWN = 60f;
+    private static final float MAX_PITCH_UP = 45f;
+    private static final float MAX_ROLL = 45f;
+    private static final float SOFT_LIMIT_ZONE = 0.3f; // input authority fades over the last 30% of travel
+    private static final float ANGULAR_DRAG = 0.90f;   // per tick -> max rotation rate ~58 deg/s
+    private static final float STAB_GAIN = 1.0f;       // weak auto-level: deg/s^2 of restoring torque per deg off level
+
+    // crash: blocked motion (intended minus actual move) that wrecks the craft
+    private static final float CRASH_SPEED = 0.5f;        // piloted: ~10 m/s into terrain
+    private static final float CRASH_SPEED_VACANT = 1.2f; // bailed-out freefall: only a long drop wrecks it
 
     // pilot control key bits (see HelicopterInputMessage / ClientInputHandler)
     private static final int K_FWD = 1, K_BACK = 2, K_LEFT = 4, K_RIGHT = 8, K_UP = 16, K_DOWN = 32;
 
     // dataWatcher slots (base Entity uses 0-1)
     private static final int DW_ROLL = 22;
-    private static final int DW_THROTTLE = 23;
+    private static final int DW_POWER = 23;
 
     /** Pilot seat height relative to the entity origin; lowered so the rotor clears the rider's head. */
     private static final double SEAT_OFFSET_Y = -0.2;
@@ -66,15 +85,14 @@ public class ThxEntityHelicopter extends Entity
     // flight state (read by the renderer where public)
     public float rotationRoll;
     public float prevRotationRoll; // previous-tick roll, for smooth render interpolation
-    public float throttle;
+    public float rotorPower;       // current rotor lift in units of gravity; drives the rotor anim
     public float rotationYawSpeed;
-    public float rotationPitchSpeed;
-    public float rotationRollSpeed;
+    public float rotationPitchSpeed; // deg/s, carries angular momentum between ticks
+    public float rotationRollSpeed;  // deg/s, carries angular momentum between ticks
 
     private float yawRad, pitchRad, rollRad;
-    private final Vector3 fwd = new Vector3();
+    private final Vector3 up = new Vector3(); // rotor axis in world space
     private final Vector3 thrust = new Vector3();
-    private final Vector3 velocity = new Vector3();
 
     public ThxEntityHelicopter(World world)
     {
@@ -94,8 +112,8 @@ public class ThxEntityHelicopter extends Entity
     @Override
     protected void entityInit()
     {
-        dataWatcher.addObject(DW_ROLL, Integer.valueOf(0));     // roll * 1000
-        dataWatcher.addObject(DW_THROTTLE, Integer.valueOf(0)); // throttle * 1000
+        dataWatcher.addObject(DW_ROLL, Integer.valueOf(0));  // roll * 1000
+        dataWatcher.addObject(DW_POWER, Integer.valueOf(0)); // rotorPower * 1000
     }
 
     @Override
@@ -117,7 +135,7 @@ public class ThxEntityHelicopter extends Entity
                 gravityFall();
             }
             dataWatcher.updateObject(DW_ROLL, Integer.valueOf((int) (rotationRoll * 1000f)));
-            dataWatcher.updateObject(DW_THROTTLE, Integer.valueOf((int) (throttle * 1000f)));
+            dataWatcher.updateObject(DW_POWER, Integer.valueOf((int) (rotorPower * 1000f)));
         }
         else if (clientControlled && riddenByEntity != null)
         {
@@ -152,28 +170,51 @@ public class ThxEntityHelicopter extends Entity
         setRotation(rotationYaw, rotationPitch);
     }
 
-    /** One step of piloted flight: input -> rotation/throttle -> thrust -> motion -> move. */
+    /** One step of piloted flight: input -> attitude/rotor -> thrust -> motion -> move + crash check. */
     private void flightStep()
     {
         applyPilotInput();
         updateRotation();
         updateVectors();
         updateMotion();
+
+        double ix = motionX, iy = motionY, iz = motionZ; // intended motion, for the impact check
         moveEntity(motionX, motionY, motionZ);
+        if (!worldObj.isRemote) checkCrash(ix, iy, iz, CRASH_SPEED); // prediction never wrecks locally
     }
 
     /** Vacant helicopter: gravity + retained momentum, so one bailed at speed arcs instead of
-     *  dropping straight down. Rotor spins down. */
+     *  dropping straight down. Rotor winds down; a long-drop impact wrecks it. */
     private void gravityFall()
     {
         motionY -= 0.08;
         if (motionY < -2.0) motionY = -2.0;
+        double ix = motionX, iy = motionY, iz = motionZ;
         moveEntity(motionX, motionY, motionZ);
+        checkCrash(ix, iy, iz, CRASH_SPEED_VACANT);
+        if (isDead) return;
         // light air drag keeps horizontal momentum (a freshly spawned craft has none, so it just drops)
         motionX *= 0.98;
         motionZ *= 0.98;
         if (onGround) { motionX *= 0.5; motionZ *= 0.5; } // settle once it lands
-        throttle *= 0.6f;
+        rotorPower *= 0.98f;
+    }
+
+    /** Wreck the craft if moveEntity blocked more motion than the threshold (a hard strike). */
+    private void checkCrash(double intendedX, double intendedY, double intendedZ, float threshold)
+    {
+        double bx = intendedX - (posX - prevPosX);
+        double by = intendedY - (posY - prevPosY);
+        double bz = intendedZ - (posZ - prevPosZ);
+        double blockedSq = bx * bx + by * by + bz * bz;
+        if (blockedSq > threshold * threshold) crash();
+    }
+
+    private void crash()
+    {
+        if (riddenByEntity != null) riddenByEntity.mountEntity(null);
+        worldObj.createExplosion(this, posX, posY, posZ, 1.5f, false); // hurts entities, spares terrain
+        setDead();
     }
 
     /** Tracker update on the client. While the local pilot is predicting, ignore it entirely;
@@ -190,10 +231,11 @@ public class ThxEntityHelicopter extends Entity
     private void readSyncedState()
     {
         rotationRoll = dataWatcher.getWatchableObjectInt(DW_ROLL) / 1000f;
-        throttle = dataWatcher.getWatchableObjectInt(DW_THROTTLE) / 1000f;
+        rotorPower = dataWatcher.getWatchableObjectInt(DW_POWER) / 1000f;
     }
 
-    /** Map the pilot's input + look direction onto yaw/pitch/roll/throttle (server side). */
+    /** Map the pilot's input + look direction onto attitude torques and rotor power (server side,
+     *  re-run on the pilot's client for prediction). */
     private void applyPilotInput()
     {
         final int k = inputKeys;
@@ -201,13 +243,15 @@ public class ThxEntityHelicopter extends Entity
         final boolean leftK = (k & K_LEFT) != 0, rightK = (k & K_RIGHT) != 0;
         final boolean upK = (k & K_UP) != 0, downK = (k & K_DOWN) != 0;
 
-        if (onGround) // sluggish on the ground
+        if (onGround) // skids: strong friction, attitude settles, angular momentum dies
         {
             if (Math.abs(rotationPitch) > 0.1f) rotationPitch *= 0.70f;
             if (Math.abs(rotationRoll) > 0.1f) rotationRoll *= 0.70f;
-            motionX *= FRICTION;
+            rotationPitchSpeed *= 0.5f;
+            rotationRollSpeed *= 0.5f;
+            motionX *= GROUND_FRICTION;
             motionY = 0.0;
-            motionZ *= FRICTION;
+            motionZ *= GROUND_FRICTION;
         }
 
         // YAW: follow the pilot's look direction (their rotation is already synced to the server)
@@ -220,59 +264,37 @@ public class ThxEntityHelicopter extends Entity
         rotationYaw += rotationYawSpeed * DT;
         rotationYaw %= 360f;
 
-        // PITCH: forward = nose down, back = nose up, else auto-level
-        if (fwdK)
-        {
-            rotationPitchSpeed = PITCH_SPEED_DEG;
-            rotationPitch += rotationPitchSpeed * DT;
-            if (rotationPitch > MAX_PITCH) { rotationPitch = MAX_PITCH; rotationPitchSpeed = 0f; }
-        }
-        else if (backK)
-        {
-            rotationPitchSpeed = -PITCH_SPEED_DEG;
-            rotationPitch += rotationPitchSpeed * DT;
-            if (rotationPitch < -MAX_PITCH / 1.5f) { rotationPitch = -MAX_PITCH / 1.5f; rotationPitchSpeed = 0f; }
-        }
-        else
-        {
-            rotationPitchSpeed = -rotationPitch * 0.5f;
-            rotationPitch += rotationPitchSpeed * DT;
-        }
+        // PITCH: W/S apply torque (authority fading near the limit), the stabilizer pulls weakly
+        // toward level, and the rate carries momentum -> the nose dips, wallows, and recovers
+        float pitchTorque = -rotationPitch * STAB_GAIN;
+        if (fwdK) pitchTorque += PITCH_TORQUE * softLimit(rotationPitch, MAX_PITCH_DOWN);
+        else if (backK) pitchTorque -= PITCH_TORQUE * softLimit(-rotationPitch, MAX_PITCH_UP);
+        rotationPitchSpeed = (rotationPitchSpeed + pitchTorque * DT) * ANGULAR_DRAG;
+        rotationPitch += rotationPitchSpeed * DT;
+        if (rotationPitch > MAX_PITCH_DOWN) { rotationPitch = MAX_PITCH_DOWN; if (rotationPitchSpeed > 0f) rotationPitchSpeed = 0f; }
+        else if (rotationPitch < -MAX_PITCH_UP) { rotationPitch = -MAX_PITCH_UP; if (rotationPitchSpeed < 0f) rotationPitchSpeed = 0f; }
 
-        // ROLL: left/right bank, else auto-level
-        if (leftK)
-        {
-            rotationRollSpeed = ROLL_SPEED_DEG;
-            rotationRoll += rotationRollSpeed * DT;
-            if (rotationRoll > MAX_ROLL) { rotationRoll = MAX_ROLL; rotationRollSpeed = 0f; }
-        }
-        else if (rightK)
-        {
-            rotationRollSpeed = -ROLL_SPEED_DEG;
-            rotationRoll += rotationRollSpeed * DT;
-            if (rotationRoll < -MAX_ROLL) { rotationRoll = -MAX_ROLL; rotationRollSpeed = 0f; }
-        }
-        else
-        {
-            rotationRollSpeed = -rotationRoll * 0.6f;
-            rotationRoll += rotationRollSpeed * DT;
-        }
+        // ROLL: same dynamics as pitch
+        float rollTorque = -rotationRoll * STAB_GAIN;
+        if (leftK) rollTorque += ROLL_TORQUE * softLimit(rotationRoll, MAX_ROLL);
+        else if (rightK) rollTorque -= ROLL_TORQUE * softLimit(-rotationRoll, MAX_ROLL);
+        rotationRollSpeed = (rotationRollSpeed + rollTorque * DT) * ANGULAR_DRAG;
+        rotationRoll += rotationRollSpeed * DT;
+        if (rotationRoll > MAX_ROLL) { rotationRoll = MAX_ROLL; if (rotationRollSpeed > 0f) rotationRollSpeed = 0f; }
+        else if (rotationRoll < -MAX_ROLL) { rotationRoll = -MAX_ROLL; if (rotationRollSpeed < 0f) rotationRollSpeed = 0f; }
 
-        // THROTTLE (collective): ascend/descend, else decay toward zero
-        if (upK)
-        {
-            throttle += THROTTLE_INC;
-            if (throttle > THROTTLE_MAX) throttle = THROTTLE_MAX;
-        }
-        else if (downK)
-        {
-            throttle -= THROTTLE_INC;
-            if (throttle < THROTTLE_MIN) throttle = THROTTLE_MIN;
-        }
-        else
-        {
-            throttle *= 0.6f;
-        }
+        // ROTOR (collective): spool toward the commanded power; neutral idles just under hover,
+        // so a hands-off craft slowly settles instead of auto-hovering
+        float powerTarget = upK ? POWER_MAX : downK ? POWER_MIN : POWER_NEUTRAL;
+        rotorPower += (powerTarget - rotorPower) * POWER_SPOOL;
+    }
+
+    /** Input authority fades to zero over the last {@link #SOFT_LIMIT_ZONE} of travel toward the
+     *  limit, so attitude approaches its maximum asymptotically instead of slamming a clamp. */
+    private static float softLimit(float angleTowardLimit, float maxAngle)
+    {
+        float s = (maxAngle - angleTowardLimit) / (maxAngle * SOFT_LIMIT_ZONE);
+        return s < 0f ? 0f : s > 1f ? 1f : s;
     }
 
     private void updateRotation()
@@ -290,56 +312,52 @@ public class ThxEntityHelicopter extends Entity
         rollRad = rotationRoll * RAD_PER_DEG;
     }
 
+    /** Rotor axis (craft up) in world space from yaw/pitch/roll. */
     private void updateVectors()
     {
-        float cosYaw = MathHelper.cos(-yawRad - PI);
-        float sinYaw = MathHelper.sin(-yawRad - PI);
-        float cosPitch = MathHelper.cos(-pitchRad);
-        float sinPitch = MathHelper.sin(-pitchRad);
-        fwd.x = -sinYaw * cosPitch;
-        fwd.y = sinPitch;
-        fwd.z = -cosYaw * cosPitch;
+        float cosYaw = MathHelper.cos(yawRad), sinYaw = MathHelper.sin(yawRad);
+        float cosPitch = MathHelper.cos(pitchRad), sinPitch = MathHelper.sin(pitchRad);
+        float cosRoll = MathHelper.cos(rollRad), sinRoll = MathHelper.sin(rollRad);
+        // world up, pitched about the right wing (nose-down tilts it toward the nose),
+        // then rolled about the nose (positive roll tilts it to port)
+        up.x = -sinYaw * sinPitch * cosRoll + cosYaw * sinRoll;
+        up.y = cosPitch * cosRoll;
+        up.z = cosYaw * sinPitch * cosRoll + sinYaw * sinRoll;
     }
 
     private void updateThrust()
     {
-        // lift falls off as the craft pitches/rolls away from level
-        thrust.y = MathHelper.cos(pitchRad) * MathHelper.cos(rollRad) * MathHelper.cos(rollRad);
-
-        // forward/back from pitch
-        float accel = 1f - MathHelper.cos(pitchRad);
-        if (pitchRad > 0f) accel *= -1f;
-        thrust.x = -fwd.x * accel;
-        thrust.z = -fwd.z * accel;
-        thrust.y += -fwd.y * accel;
-
-        // strafe from roll
-        float strafe = 1f - MathHelper.cos(rollRad);
-        if (rollRad > 0f) strafe *= -1f;
-        thrust.x -= fwd.z * strafe;
-        thrust.z += fwd.x * strafe;
-
-        // scale by throttle, then subtract gravity
-        thrust.normalize().scale(MAX_ACCEL * (1f + throttle));
-        thrust.y -= GRAVITY;
+        // lift along the tilted rotor axis (power 1.0 exactly counters gravity when level), minus
+        // world gravity: nosing down trades lift for forward drive and starts a sink
+        float lift = GRAVITY * rotorPower;
+        thrust.x = up.x * lift;
+        thrust.y = up.y * lift - GRAVITY;
+        thrust.z = up.z * lift;
     }
 
     private void updateMotion()
     {
         updateThrust();
 
-        velocity.set((float) motionX, (float) motionY, (float) motionZ);
-        velocity.scale(FRICTION);
-        Vector3.add(velocity, thrust, velocity);
+        // per-axis drag in the heading frame: slippery along the nose, draggier sideways (sideslip
+        // bleeds off, so banked turns carve instead of drifting), draggiest through the rotor disc;
+        // terminal speeds fall out of drag vs thrust: ~1.05 b/t dive, ~0.85 level cruise, ~0.4 climb
+        float fwdX = -MathHelper.sin(yawRad), fwdZ = MathHelper.cos(yawRad);
+        double vFwd = (motionX * fwdX + motionZ * fwdZ) * DRAG_FWD;
+        double vLat = (motionX * fwdZ - motionZ * fwdX) * DRAG_LAT;
+        if (vFwd < 0.0) vFwd *= 0.97; // tail-first is draggier: backward flight tops out lower
+        motionX = vFwd * fwdX + vLat * fwdZ + thrust.x;
+        motionZ = vFwd * fwdZ - vLat * fwdX + thrust.z;
+        motionY = motionY * DRAG_VERT + thrust.y;
 
-        if (velocity.lengthSquared() > MAX_VELOCITY * MAX_VELOCITY)
+        double speedSq = motionX * motionX + motionY * motionY + motionZ * motionZ;
+        if (speedSq > MAX_VELOCITY * MAX_VELOCITY)
         {
-            velocity.scale(MAX_VELOCITY / velocity.length());
+            double scale = MAX_VELOCITY / Math.sqrt(speedSq);
+            motionX *= scale;
+            motionY *= scale;
+            motionZ *= scale;
         }
-
-        motionX = velocity.x;
-        motionY = velocity.y;
-        motionZ = velocity.z;
     }
 
     /** Right-click: board if empty, dismount if you're the pilot; blocked if someone else is aboard. */
