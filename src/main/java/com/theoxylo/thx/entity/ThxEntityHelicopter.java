@@ -4,6 +4,7 @@ import net.minecraft.block.material.Material;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.DamageSource;
 import net.minecraft.util.MathHelper;
 import net.minecraft.world.World;
@@ -24,6 +25,8 @@ import com.theoxylo.thx.util.Vector3;
  * and a weak auto-level stabilizer; the rotor spools toward the commanded
  * collective and lifts along the tilted rotor axis; per-axis aerodynamic drag
  * (not a speed cap) sets the terminal speeds; hard impacts wreck the craft.
+ * Water: a too-fast splash-down also wrecks it, and submerging past the drown
+ * depth kills the engine for good — the hull then floats, bobbing at that depth.
  * Yaw still chases the pilot's look direction. Deferred for now: view modes,
  * look-pitch, altitude lock, HUD, map, and the rocket/missile features
  * (descoped).
@@ -66,12 +69,20 @@ public class ThxEntityHelicopter extends Entity
     private static final int WASH_RANGE = 8;          // blocks of downwash reach below the craft
     private static final float WASH_MIN_POWER = 0.4f; // rotor power needed to kick up spray
 
+    // water: a hard splash-down crashes (same speed bar as terrain, but measured on entry,
+    // since water never blocks movement); deep submersion drowns the engine and the hull floats
+    private static final float ENGINE_DROWN_SUB = 0.6f; // submerged hull fraction that kills the engine
+    private static final float BUOY_LEVEL = 0.6f;       // floating equilibrium: fraction submerged
+    private static final float BUOY_ACCEL = 0.1f;       // restoring accel per unit of depth error
+    private static final float WATER_DRAG = 0.8f;       // per-tick velocity retention in water
+
     // pilot control key bits (see HelicopterInputMessage / ClientInputHandler)
     private static final int K_FWD = 1, K_BACK = 2, K_LEFT = 4, K_RIGHT = 8, K_UP = 16, K_DOWN = 32;
 
     // dataWatcher slots (base Entity uses 0-1)
     private static final int DW_ROLL = 22;
     private static final int DW_POWER = 23;
+    private static final int DW_FLAGS = 24; // bit 0: engineDead
 
     /** Pilot seat height relative to the entity origin; lowered so the rotor clears the rider's head. */
     private static final double SEAT_OFFSET_Y = -0.2;
@@ -94,6 +105,10 @@ public class ThxEntityHelicopter extends Entity
     public float rotationYawSpeed;
     public float rotationPitchSpeed; // deg/s, carries angular momentum between ticks
     public float rotationRollSpeed;  // deg/s, carries angular momentum between ticks
+
+    /** Engine drowned by deep water: permanent; the craft is an unpowered, buoyant hulk. */
+    private boolean engineDead;
+    private boolean wasTouchingWater; // for detecting the tick the craft first hits water
 
     private float yawRad, pitchRad, rollRad;
     private final Vector3 up = new Vector3(); // rotor axis in world space
@@ -119,6 +134,7 @@ public class ThxEntityHelicopter extends Entity
     {
         dataWatcher.addObject(DW_ROLL, Integer.valueOf(0));  // roll * 1000
         dataWatcher.addObject(DW_POWER, Integer.valueOf(0)); // rotorPower * 1000
+        dataWatcher.addObject(DW_FLAGS, Byte.valueOf((byte) 0));
     }
 
     @Override
@@ -130,33 +146,36 @@ public class ThxEntityHelicopter extends Entity
         if (!worldObj.isRemote)
         {
             // SERVER: authoritative simulation
-            if (riddenByEntity != null)
+            if (riddenByEntity != null && riddenByEntity.isDead) riddenByEntity.mountEntity(null);
+            if (riddenByEntity != null && !engineDead) flightStep();
+            else gravityFall(); // vacant, or a drowned-engine hulk (possibly still ridden)
+            dataWatcher.updateObject(DW_ROLL, Integer.valueOf((int) (rotationRoll * 1000f)));
+            dataWatcher.updateObject(DW_POWER, Integer.valueOf((int) (rotorPower * 1000f)));
+            dataWatcher.updateObject(DW_FLAGS, Byte.valueOf((byte) (engineDead ? 1 : 0)));
+        }
+        else
+        {
+            // engine death is latched from the server flag (the predicting pilot may also have
+            // detected it locally a moment earlier; it never un-dies)
+            if ((dataWatcher.getWatchableObjectByte(DW_FLAGS) & 1) != 0) engineDead = true;
+
+            if (clientControlled && riddenByEntity != null)
             {
-                if (riddenByEntity.isDead) riddenByEntity.mountEntity(null);
+                // CLIENT PREDICTION (local pilot): run identical physics locally for a smooth,
+                // zero-lag view. The tracker's quantized updates are ignored (see
+                // setPositionAndRotation2) so they don't fight the prediction.
+                if (engineDead) gravityFall();
                 else flightStep();
             }
             else
             {
-                gravityFall();
+                // CLIENT spectator (vacant or someone else's): smoothly follow the tracker, read synced extras.
+                clientLerp();
+                readSyncedState();
             }
-            dataWatcher.updateObject(DW_ROLL, Integer.valueOf((int) (rotationRoll * 1000f)));
-            dataWatcher.updateObject(DW_POWER, Integer.valueOf((int) (rotorPower * 1000f)));
-        }
-        else if (clientControlled && riddenByEntity != null)
-        {
-            // CLIENT PREDICTION (local pilot): run identical physics locally for a smooth,
-            // zero-lag view. The tracker's quantized updates are ignored (see
-            // setPositionAndRotation2) so they don't fight the prediction.
-            flightStep();
-        }
-        else
-        {
-            // CLIENT spectator (vacant or someone else's): smoothly follow the tracker, read synced extras.
-            clientLerp();
-            readSyncedState();
-        }
 
-        if (worldObj.isRemote) spawnRotorWash();
+            spawnRotorWash();
+        }
     }
 
     /** EntityBoat-style smoothing of the quantized tracker updates, so non-piloted helicopters
@@ -188,23 +207,78 @@ public class ThxEntityHelicopter extends Entity
         double ix = motionX, iy = motionY, iz = motionZ; // intended motion, for the impact check
         moveEntity(motionX, motionY, motionZ);
         if (!worldObj.isRemote) checkCrash(ix, iy, iz, CRASH_SPEED); // prediction never wrecks locally
+        if (isDead) return;
+        updateWaterState(ix * ix + iy * iy + iz * iz);
     }
 
-    /** Vacant helicopter: gravity + retained momentum, so one bailed at speed arcs instead of
-     *  dropping straight down. Rotor winds down; a long-drop impact wrecks it. */
+    /** Unpowered physics: freefall with retained momentum (so a craft bailed at speed arcs
+     *  instead of dropping straight down), or a buoyant float once in water. Covers vacant
+     *  craft and drowned-engine hulks (ridden or not); also run by the pilot's client as
+     *  prediction, so crash side effects stay server-only. */
     private void gravityFall()
     {
-        motionY -= 0.08;
-        if (motionY < -2.0) motionY = -2.0;
-        double ix = motionX, iy = motionY, iz = motionZ;
-        moveEntity(motionX, motionY, motionZ);
-        checkCrash(ix, iy, iz, CRASH_SPEED_VACANT);
-        if (isDead) return;
-        // light air drag keeps horizontal momentum (a freshly spawned craft has none, so it just drops)
-        motionX *= 0.98;
-        motionZ *= 0.98;
-        if (onGround) { motionX *= 0.5; motionZ *= 0.5; } // settle once it lands
-        rotorPower *= 0.98f;
+        float sub = submergedFraction();
+        if (sub > 0.01f)
+        {
+            // in water: restoring accel toward the equilibrium depth + heavy damping = settle
+            // and bob at BUOY_LEVEL; no crash check, since water never blocks movement
+            motionY += BUOY_ACCEL * (sub - BUOY_LEVEL);
+            motionX *= WATER_DRAG;
+            motionY *= WATER_DRAG;
+            motionZ *= WATER_DRAG;
+            moveEntity(motionX, motionY, motionZ);
+        }
+        else
+        {
+            motionY -= 0.08;
+            if (motionY < -2.0) motionY = -2.0;
+            double ix = motionX, iy = motionY, iz = motionZ;
+            moveEntity(motionX, motionY, motionZ);
+            if (!worldObj.isRemote) checkCrash(ix, iy, iz, CRASH_SPEED_VACANT);
+            if (isDead) return;
+            // light air drag keeps horizontal momentum (a freshly spawned craft has none, so it just drops)
+            motionX *= 0.98;
+            motionZ *= 0.98;
+            if (onGround) { motionX *= 0.5; motionZ *= 0.5; } // settle once it lands
+        }
+        rotorPower *= sub > 0.01f ? 0.92f : 0.98f; // rotor winds down; water kills it fast
+        if (rotorPower < 0.01f) rotorPower = 0f;   // snap to a full stop so the rotor anim can finish
+        updateWaterState(0.0); // entry speed 0: an unpowered splash-down never explodes, just floats
+    }
+
+    /** Fraction of the hull (bounding box) below the water line, EntityBoat-style: the box is
+     *  sampled as five horizontal slices. */
+    private float submergedFraction()
+    {
+        final int slices = 5;
+        float sub = 0f;
+        double sliceH = (boundingBox.maxY - boundingBox.minY) / slices;
+        for (int i = 0; i < slices; i++)
+        {
+            AxisAlignedBB slice = AxisAlignedBB.getBoundingBox(
+                boundingBox.minX, boundingBox.minY + sliceH * i, boundingBox.minZ,
+                boundingBox.maxX, boundingBox.minY + sliceH * (i + 1), boundingBox.maxZ);
+            if (worldObj.isAABBInMaterial(slice, Material.water)) sub += 1f / slices;
+        }
+        return sub;
+    }
+
+    /** Post-move water checks. Splashing down harder than the terrain crash bar wrecks the
+     *  craft (server side, powered flight only — entrySpeedSq is 0 for unpowered falls);
+     *  submerging past the drown depth kills the engine for good, after which
+     *  {@link #gravityFall()} floats the hull at that depth. */
+    private void updateWaterState(double entrySpeedSq)
+    {
+        float sub = submergedFraction();
+        boolean touching = sub > 0.05f;
+        if (touching && !wasTouchingWater && !worldObj.isRemote
+            && entrySpeedSq > CRASH_SPEED * CRASH_SPEED)
+        {
+            crash();
+            return;
+        }
+        if (!engineDead && sub >= ENGINE_DROWN_SUB) engineDead = true; // water in the engine
+        wasTouchingWater = touching;
     }
 
     /** Wreck the craft if moveEntity blocked more motion than the threshold (a hard strike). */
@@ -468,8 +542,14 @@ public class ThxEntityHelicopter extends Entity
     protected boolean canTriggerWalking() { return false; }
 
     @Override
-    protected void readEntityFromNBT(NBTTagCompound tag) {}
+    protected void readEntityFromNBT(NBTTagCompound tag)
+    {
+        engineDead = tag.getBoolean("engineDead");
+    }
 
     @Override
-    protected void writeEntityToNBT(NBTTagCompound tag) {}
+    protected void writeEntityToNBT(NBTTagCompound tag)
+    {
+        tag.setBoolean("engineDead", engineDead);
+    }
 }

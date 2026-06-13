@@ -38,15 +38,9 @@ public class ThxRender extends Render
         model.rotationPitch = heli.prevRotationPitch + (heli.rotationPitch - heli.prevRotationPitch) * partialTicks;
         model.rotationRoll  = lerpAngle(heli.prevRotationRoll, heli.rotationRoll, partialTicks);
 
-        // rotor speed tracks rotor power while occupied; spin-down anim when parked/empty
-        if (heli.riddenByEntity != null)
-        {
-            model.rotorSpeed = 0.5f + 0.55f * heli.rotorPower / ThxEntityHelicopter.POWER_MAX;
-        }
-        else
-        {
-            model.rotorSpeed = 0f;
-        }
+        // rotor visual speed is proportional to rotor power (synced for spectators), so a
+        // drowned or abandoned craft's rotor visibly winds down to a stop
+        model.rotorSpeed = 1.05f * heli.rotorPower / ThxEntityHelicopter.POWER_MAX;
         model.render();
 
         GL11.glPopMatrix();
