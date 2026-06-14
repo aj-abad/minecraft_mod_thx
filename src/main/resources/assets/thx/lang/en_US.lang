@@ -1,1 +1,9 @@
 item.helicopter.name=Helicopter
+
+key.categories.thx=Helicopter Controls
+key.thx.pitch_forward=Pitch Forward
+key.thx.pitch_back=Pitch Back
+key.thx.roll_left=Roll Left
+key.thx.roll_right=Roll Right
+key.thx.ascend=Ascend
+key.thx.descend=Descend

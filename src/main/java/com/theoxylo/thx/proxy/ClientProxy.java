@@ -1,6 +1,7 @@
 package com.theoxylo.thx.proxy;
 
 import com.theoxylo.thx.client.ClientInputHandler;
+import com.theoxylo.thx.client.ThxKeyBindings;
 import com.theoxylo.thx.client.render.ThxRender;
 import com.theoxylo.thx.entity.ThxEntityHelicopter;
 
@@ -34,7 +35,7 @@ public class ClientProxy extends CommonProxy
     @Override
     public void registerKeyBindings()
     {
-        // TODO Phase 6: ClientRegistry.registerKeyBinding(...) for flight controls,
-        //     plus an InputEvent.KeyInputEvent / client-tick handler.
+        // Flight controls -> Options/Controls (the client-tick poll lives in ClientInputHandler).
+        ThxKeyBindings.register();
     }
 }
