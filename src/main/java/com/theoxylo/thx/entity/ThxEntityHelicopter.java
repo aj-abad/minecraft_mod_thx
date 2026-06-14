@@ -3,12 +3,14 @@ package com.theoxylo.thx.entity;
 import net.minecraft.block.material.Material;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.DamageSource;
 import net.minecraft.util.MathHelper;
 import net.minecraft.world.World;
 
+import com.theoxylo.thx.ModItems;
 import com.theoxylo.thx.util.Vector3;
 
 /**
@@ -147,6 +149,7 @@ public class ThxEntityHelicopter extends Entity
         {
             // SERVER: authoritative simulation
             if (riddenByEntity != null && riddenByEntity.isDead) riddenByEntity.mountEntity(null);
+            if (riddenByEntity != null) riddenByEntity.fallDistance = 0f; // the craft eats the impacts, not the pilot
             if (riddenByEntity != null && !engineDead) flightStep();
             else gravityFall(); // vacant, or a drowned-engine hulk (possibly still ridden)
             dataWatcher.updateObject(DW_ROLL, Integer.valueOf((int) (rotationRoll * 1000f)));
@@ -518,7 +521,7 @@ public class ThxEntityHelicopter extends Entity
         }
     }
 
-    /** Let a player punch a parked helicopter to remove it (debug convenience). */
+    /** Let a player punch a helicopter to remove it; outside creative mode it drops back to an item. */
     @Override
     public boolean attackEntityFrom(DamageSource source, float amount)
     {
@@ -526,6 +529,10 @@ public class ThxEntityHelicopter extends Entity
         Entity attacker = source.getEntity();
         if (attacker instanceof EntityPlayer && attacker != riddenByEntity)
         {
+            if (!((EntityPlayer) attacker).capabilities.isCreativeMode)
+            {
+                entityDropItem(new ItemStack(ModItems.helicopter), 0.5f);
+            }
             setDead();
             return true;
         }
