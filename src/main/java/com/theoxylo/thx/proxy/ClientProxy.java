@@ -1,5 +1,6 @@
 package com.theoxylo.thx.proxy;
 
+import com.theoxylo.thx.client.ClientCameraHandler;
 import com.theoxylo.thx.client.ClientInputHandler;
 import com.theoxylo.thx.client.ThxKeyBindings;
 import com.theoxylo.thx.client.render.ThxRender;
@@ -24,6 +25,8 @@ public class ClientProxy extends CommonProxy
         registerKeyBindings();
         // Flight input: poll the pilot's keys each client tick and send to the server.
         FMLCommonHandler.instance().bus().register(new ClientInputHandler());
+        // First-person view banks with the helicopter's roll (Flan's-style).
+        FMLCommonHandler.instance().bus().register(new ClientCameraHandler());
     }
 
     @Override

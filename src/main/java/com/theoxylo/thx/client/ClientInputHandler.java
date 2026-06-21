@@ -1,6 +1,7 @@
 package com.theoxylo.thx.client;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.settings.GameSettings;
 import net.minecraft.entity.player.EntityPlayer;
 
 import com.theoxylo.thx.entity.ThxEntityHelicopter;
@@ -15,9 +16,10 @@ import cpw.mods.fml.common.gameevent.TickEvent;
  * to the server (only when it changes). This is the ONLY place with client-only
  * (Minecraft/LWJGL) references; the entity stays server-safe.
  *
- * The keys are the rebindable {@link ThxKeyBindings} (defaults: W/S pitch, A/D
- * roll, Space ascend, X descend). Yaw follows where you look. Shift still
- * sneak-dismounts (vanilla).
+ * Pitch (W/S), roll (A/D) and ascend (Jump) read the player's VANILLA movement
+ * bindings directly, so flight uses whatever those are bound to and walking
+ * still works; only descend is a dedicated {@link ThxKeyBindings} key (default
+ * X). Yaw follows where you look. Shift still sneak-dismounts (vanilla).
  */
 public class ClientInputHandler
 {
@@ -50,12 +52,16 @@ public class ClientInputHandler
         int keys = 0;
         if (mc.currentScreen == null) // don't fly while a GUI/chat is open
         {
-            if (ThxKeyBindings.pitchForward.getIsKeyPressed()) keys |= 1;
-            if (ThxKeyBindings.pitchBack.getIsKeyPressed())    keys |= 2;
-            if (ThxKeyBindings.rollLeft.getIsKeyPressed())     keys |= 4;
-            if (ThxKeyBindings.rollRight.getIsKeyPressed())    keys |= 8;
-            if (ThxKeyBindings.ascend.getIsKeyPressed())       keys |= 16;
-            if (ThxKeyBindings.descend.getIsKeyPressed())      keys |= 32;
+            // Pitch/roll/ascend reuse the vanilla movement bindings (see ThxKeyBindings
+            // for why a separate W/A/S/D/Space binding would break walking); descend is
+            // our own non-conflicting key.
+            GameSettings gs = mc.gameSettings;
+            if (gs.keyBindForward.getIsKeyPressed()) keys |= 1;
+            if (gs.keyBindBack.getIsKeyPressed())    keys |= 2;
+            if (gs.keyBindLeft.getIsKeyPressed())    keys |= 4;
+            if (gs.keyBindRight.getIsKeyPressed())   keys |= 8;
+            if (gs.keyBindJump.getIsKeyPressed())    keys |= 16;
+            if (ThxKeyBindings.descend.getIsKeyPressed()) keys |= 32;
         }
 
         // drive the local prediction, and mirror the input to the server
