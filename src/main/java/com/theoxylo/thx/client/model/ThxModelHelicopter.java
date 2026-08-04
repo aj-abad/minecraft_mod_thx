@@ -5,13 +5,21 @@ import net.minecraft.client.model.ModelRenderer;
 /**
  * The helicopter geometry: vanilla {@link ModelRenderer} boxes with texture-UV
  * offsets into helicopter.png (a 64x32 logical UV layout, supplied at 8x as a
- * 512x256 texture). Ported verbatim from the 1.6.1 ThxModelHelicopter; only the
- * ThxConfig texture lookup became a constant.
+ * 512x256 texture). Ported from the 1.6.1 ThxModelHelicopter; the ThxConfig
+ * texture lookup became a constant.
+ *
+ * The two rotors and the windshield are {@link ThxModelPlaneBox} extrusions
+ * rather than vanilla boxes: each is one 1u-thick slab drawing a single patch
+ * of the sheet on both faces and on the rim, instead of a flat box paying for a
+ * second copy of its artwork to put on the side nobody authored.
  */
 public class ThxModelHelicopter extends ThxModelHelicopterBase
 {
     float x2scale = 0.125f; // all boxes are authored half-size and scaled x2 at render to save texture space
     float centerScale = 1.0f;
+
+    /** Half a plane part's extrusion; seats one flush against a neighbour whatever its thickness. */
+    private static final float PLANE_HALF = ThxModelPlaneBox.THICKNESS / 2f;
 
     public ModelRenderer mainRotor;
     public ModelRenderer rotor2;
@@ -83,20 +91,19 @@ public class ThxModelHelicopter extends ThxModelHelicopterBase
         mainRotor:
         {
             float length = 30f;
-            float height =  0f;
-            float width  =  1f;
-            mainRotor = new ModelRenderer(this, 0, 0);
-            mainRotor.addBox(-length / 2f, -height / 2f, -width / 2f, (int) length, (int) height, (int) width);
-            mainRotor.setRotationPoint(2f * centerScale, -11.7f * centerScale, 0f * centerScale);
+            float chord  =  1f;
+            mainRotor = extrudedPlane(1, 0, (int) length, (int) chord);
+            // seat the blade's underside on the rotor head, which tops out at -11.5
+            mainRotor.setRotationPoint(2f * centerScale, (-11.5f - PLANE_HALF) * centerScale, 0f * centerScale);
+            mainRotor.rotateAngleX = PI / 2f; // 90 deg pitch to lay the blade into the rotor disc
         }
         tailRotor:
         {
             float length = 8f;
-            float height = 1f;
-            float width  = 0f;
-            tailRotor = new ModelRenderer(this, 0, 2);
-            tailRotor.addBox(-length / 2f, -height / 2f, -width / 2f, (int) length, (int) height, (int) width);
-            tailRotor.setRotationPoint(16f * centerScale, -7f * centerScale, .7f * centerScale);
+            float chord  = 1f;
+            tailRotor = extrudedPlane(0, 2, (int) length, (int) chord);
+            // seat the disc just outboard of the tail boom, whose flank is at z 0.5
+            tailRotor.setRotationPoint(16f * centerScale, -7f * centerScale, (0.5f + PLANE_HALF) * centerScale);
         }
         tail:
         {
@@ -129,12 +136,28 @@ public class ThxModelHelicopter extends ThxModelHelicopterBase
         {
             float length = 9f;
             float height = 7f;
-            float width  = 0f;
-            windshield = new ModelRenderer(this, 22, 2);
-            windshield.addBox(-length / 2f, -height / 2f, -width / 2f, (int) length, (int) height, (int) width);
-            windshield.setRotationPoint(-5.5f * centerScale, -4.5f * centerScale, 0f * centerScale);
+            windshield = extrudedPlane(22, 2, (int) length, (int) height);
+            // -5 stands the pane on the front wall, which tops out at -1.5, so all 7
+            // units of glass show instead of the bottom 0.5 being swallowed by it.
+            // Unlike the rotors this needs no thickness term -- the pane extrudes
+            // across the wall's own thickness, not into anything it can clash with.
+            windshield.setRotationPoint(-5.5f * centerScale, -5f * centerScale, 0f * centerScale);
             windshield.rotateAngleY = PI * 1.5f; // 270 deg yaw
         }
+    }
+
+    /**
+     * A part made of one 1u-thick extruded plane -- a w x h patch of the sheet at
+     * (texU, texV) covering both faces and the rim. Built in the XY plane centred
+     * on the rotation point and extruded along Z; rotate the result to aim it.
+     */
+    @SuppressWarnings("unchecked") // ModelRenderer.cubeList is a raw List
+    private ModelRenderer extrudedPlane(int texU, int texV, int w, int h)
+    {
+        ModelRenderer part = new ModelRenderer(this);
+        float depth = ThxModelPlaneBox.THICKNESS;
+        part.cubeList.add(new ThxModelPlaneBox(part, texU, texV, -w / 2f, -h / 2f, -depth / 2f, w, h));
+        return part;
     }
 
     public void render()

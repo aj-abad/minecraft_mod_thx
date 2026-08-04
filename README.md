@@ -9,6 +9,10 @@ original 1.6.1 ModLoader/MCP mod to a modern Forge `@Mod`.
 - Rideable vehicle entity with a server-authoritative flight model and
   client-side prediction (smooth, low-latency)
 - Falls under gravity when vacant; keeps its momentum if you bail out in motion
+- The airframe takes the hard landings, not the pilot — no fall damage while
+  aboard; bail out in mid-air and you leave along the craft's flight path (the
+  drop from there is your own problem)
+- Floats: land on water, sit there, take off again — bury it and the engine drowns
 
 ## Build
 
@@ -32,10 +36,12 @@ and only works inside the Gradle dev environment.)
 ## Crafting
 
 ```
-I R I      I = iron block      R = redstone dust
-W L G      W = any wood plank  L = leather
-W W .      G = glass block
+I R I      I = iron block      R = redstone torch
+F B .      F = furnace         B = boat (donates the hull, and floats)
 ```
+
+A chest and/or a dispenser bolted on afterwards add the cargo bay and the ammo
+rack.
 
 ## Controls (while piloting)
 
@@ -47,7 +53,7 @@ W W .      G = glass block
 | `Space` / `X` | throttle up (ascend) / down (descend) |
 | Right-click | mount / dismount |
 | `Shift` | dismount |
-| Punch (left-click) | remove a parked helicopter |
+| Punch (left-click) | break a parked helicopter back into its item (a few quick hits, boat-style) |
 
 ## Layout
 

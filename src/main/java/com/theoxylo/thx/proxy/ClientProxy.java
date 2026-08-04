@@ -2,6 +2,7 @@ package com.theoxylo.thx.proxy;
 
 import com.theoxylo.thx.client.ClientCameraHandler;
 import com.theoxylo.thx.client.ClientInputHandler;
+import com.theoxylo.thx.client.ClientSoundHandler;
 import com.theoxylo.thx.client.ThxKeyBindings;
 import com.theoxylo.thx.client.render.ThxRender;
 import com.theoxylo.thx.entity.ThxEntityHelicopter;
@@ -27,6 +28,8 @@ public class ClientProxy extends CommonProxy
         FMLCommonHandler.instance().bus().register(new ClientInputHandler());
         // First-person view banks with the helicopter's roll (Flan's-style).
         FMLCommonHandler.instance().bus().register(new ClientCameraHandler());
+        // Looping rotor sound on every nearby helicopter (slow/fast cross-fade by rotor speed).
+        FMLCommonHandler.instance().bus().register(new ClientSoundHandler());
     }
 
     @Override

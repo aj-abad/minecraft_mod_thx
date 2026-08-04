@@ -1,4 +1,11 @@
 item.helicopter.name=Helicopter
+item.helicopter.no_cargo=No cargo bay
+item.helicopter.no_ammo=No launcher
+
+container.thx.helicopter=Helicopter
+container.thx.helicopter.fuel=Fuel
+container.thx.helicopter.cargo=Cargo
+container.thx.helicopter.launcher=Launcher
 
 key.categories.thx=Helicopter Controls
 key.thx.descend=Descend

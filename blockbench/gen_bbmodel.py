@@ -23,18 +23,20 @@ def png_size(path):
 
 # ---- entity models (modded_entity) ----------------------------------------
 # name, uv[u,v], rotationPoint(rx,ry,rz), addBox offset(ox,oy,oz), size(sx,sy,sz), rot deg(ax,ay,az)
+# A trailing True marks a ThxModelPlaneBox: a 1u extrusion whose faces all share
+# the one uv patch, which box UV cannot express -- see shared_uv_faces().
 HELICOPTER = [
     ("bottom",     (0, 22),  (0.0,    2.0,  0.0), (-5.0, -4.0, -1.0), (10, 8, 2), (90, 0,   0)),
     ("frontWall",  (0, 4),   (-5.5,   0.0,  0.0), (-5.0, -1.5, -0.5), (10, 3, 1), (0,  270, 0)),
     ("backWall",   (0, 9),   (5.5,    0.0,  0.0), (-5.0, -1.5, -0.5), (10, 3, 1), (0,  90,  0)),
     ("leftWall",   (25, 19), (0.0,    0.0, -4.5), (-5.0, -1.5, -0.5), (10, 3, 1), (0,  0,   0)),
     ("rightWall",  (25, 24), (0.0,    0.0,  4.5), (-5.0, -1.5, -0.5), (10, 3, 1), (0,  180, 0)),
-    ("mainRotor",  (0, 0),   (2.0,  -11.7,  0.0), (-15.0, 0.0, -0.5), (30, 0, 1), (0,  0,   0)),
-    ("tailRotor",  (0, 2),   (16.0, -7.0,   0.7), (-4.0, -0.5,  0.0), (8,  1, 0), (0,  0,   0)),
+    ("mainRotor",  (1, 0),   (2.0, -11.625, 0.0), (-15.0, -0.5, -0.125), (30, 1, 0.25), (90, 0,  0), True),
+    ("tailRotor",  (0, 2),   (16.0, -7.0, 0.625), (-4.0, -0.5, -0.125), (8,  1, 0.25), (0,  0,   0), True),
     ("tail",       (42, 29), (12.0, -7.0,   0.0), (-5.0, -1.0, -0.5), (10, 2, 1), (0,  0,   0)),
     ("rotor2",     (58, 11), (6.5,  -5.0,   0.0), (-0.5, -5.5, -1.0), (1, 11, 2), (0,  0,   0)),
     ("rotor3",     (48, 25), (4.0,  -11.0,  0.0), (-3.0, -0.5, -1.0), (6,  1, 2), (0,  0,   0)),
-    ("windshield", (22, 2),  (-5.5, -4.5,   0.0), (-4.5, -3.5,  0.0), (9,  7, 0), (0,  270, 0)),
+    ("windshield", (22, 2),  (-5.5, -5.0,   0.0), (-4.5, -3.5, -0.125), (9,  7, 0.25), (0,  270, 0), True),
 ]
 # ModelBoat: b0=24 (len), b1=6 (wall h), b2=20 (width), b3=4 (rp.y)
 BOAT = [
@@ -45,17 +47,38 @@ BOAT = [
     ("boatSide4",  (0, 0), (0.0,   4.0,  9.0), (-10.0, -7.0, -1.0), (20, 6,  2), (0,  0,   0)),
 ]
 
+def shared_uv_faces(uv, size):
+    """Per-face UV for a ThxModelPlaneBox: both large faces take the whole sx x sy
+    patch (the +Z one mirrored) and the rim takes its one-texel border. Box UV
+    always gives each face its own patch, so these elements opt out of it."""
+    u1, v1 = uv
+    sx, sy, _ = size
+    u2, v2 = u1 + sx, v1 + sy
+    return {"north": {"uv": [u1, v1, u2, v2], "texture": 0},          # -Z, as authored
+            "south": {"uv": [u2, v1, u1, v2], "texture": 0},          # +Z, mirrored
+            "west":  {"uv": [u1, v1, u1 + 1, v2], "texture": 0},
+            "east":  {"uv": [u2 - 1, v1, u2, v2], "texture": 0},
+            "up":    {"uv": [u1, v1, u2, v1 + 1], "texture": 0},
+            "down":  {"uv": [u1, v2 - 1, u2, v2], "texture": 0}}
+
 def gen_modded(name, boxes, tex_path):
     elements, outliner = [], []
-    for i, (bn, uv, rp, off, size, rot) in enumerate(boxes):
+    for i, box in enumerate(boxes):
+        bn, uv, rp, off, size, rot = box[:6]
+        shared = len(box) > 6 and box[6]
         rx, ry, rz = rp; ox, oy, oz = off; sx, sy, sz = size; ax, ay, az = rot
         frm = [rx + ox, -(ry + oy + sy), rz + oz]              # Y-up: negate Y, swap min/max
         to  = [rx + ox + sx, -(ry + oy), rz + oz + sz]
         origin = [rx, -ry, rz]
         cid, gid = uuid(i), uuid(100 + i)
-        elements.append({"name": bn, "box_uv": True, "uv_offset": list(uv),
-                         "from": frm, "to": to, "origin": origin, "rotation": [0, 0, 0],
-                         "autouv": 0, "color": i % 8, "uuid": cid})
+        el = {"name": bn, "box_uv": not shared}
+        if not shared:
+            el["uv_offset"] = list(uv)
+        el.update({"from": frm, "to": to, "origin": origin, "rotation": [0, 0, 0],
+                   "autouv": 0, "color": i % 8, "uuid": cid})
+        if shared:
+            el["faces"] = shared_uv_faces(uv, size)
+        elements.append(el)
         outliner.append({"name": bn, "origin": origin, "rotation": [-ax, -ay, -az],
                         "uuid": gid, "export": True, "isOpen": False, "children": [cid]})
     model = {"meta": {"format_version": "4.5", "model_format": "modded_entity", "box_uv": True},

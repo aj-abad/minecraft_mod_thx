@@ -5,6 +5,9 @@
 /eclipse/
 /out/
 
+# Node helper deps (scripts/deploy.mjs is committed; its deps are not)
+/node_modules/
+
 # IDE
 .idea/
 *.iml

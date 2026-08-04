@@ -1,0 +1,14 @@
+{
+  "heli_slow": {
+    "category": "master",
+    "sounds": [
+      { "name": "heli_slow", "stream": false }
+    ]
+  },
+  "heli_fast": {
+    "category": "master",
+    "sounds": [
+      { "name": "heli_fast", "stream": false }
+    ]
+  }
+}

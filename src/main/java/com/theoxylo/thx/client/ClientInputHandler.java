@@ -20,6 +20,9 @@ import cpw.mods.fml.common.gameevent.TickEvent;
  * bindings directly, so flight uses whatever those are bound to and walking
  * still works; only descend is a dedicated {@link ThxKeyBindings} key (default
  * X). Yaw follows where you look. Shift still sneak-dismounts (vanilla).
+ *
+ * Use (right-click) is the launcher trigger, sent as bit 64: the entity
+ * consumes the pilot's own interact, so right-clicking never dismounts.
  */
 public class ClientInputHandler
 {
@@ -62,6 +65,7 @@ public class ClientInputHandler
             if (gs.keyBindRight.getIsKeyPressed())   keys |= 8;
             if (gs.keyBindJump.getIsKeyPressed())    keys |= 16;
             if (ThxKeyBindings.descend.getIsKeyPressed()) keys |= 32;
+            if (gs.keyBindUseItem.getIsKeyPressed())      keys |= 64; // launcher trigger
         }
 
         // drive the local prediction, and mirror the input to the server

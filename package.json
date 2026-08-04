@@ -1,0 +1,11 @@
+{
+  "name": "helicopter",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Build helpers for the THX Helicopter 1.7.10 Forge mod.",
+  "scripts": {
+    "build": "node scripts/deploy.mjs --no-copy",
+    "copy": "node scripts/deploy.mjs --no-build",
+    "deploy": "node scripts/deploy.mjs"
+  }
+}

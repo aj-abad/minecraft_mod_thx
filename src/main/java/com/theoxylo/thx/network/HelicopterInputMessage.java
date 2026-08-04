@@ -13,7 +13,8 @@ import cpw.mods.fml.common.network.simpleimpl.MessageContext;
 
 /**
  * Client -> server: the pilot's current control input for a helicopter, as a
- * 6-bit key bitmask. Sent only when the bitmask changes (so holding a key is one
+ * 7-bit key bitmask (six flight controls + the launcher trigger). Sent only
+ * when the bitmask changes (so holding a key is one
  * packet, releasing is another). The server applies it; the entity tracker syncs
  * the resulting motion back to all clients.
  */
